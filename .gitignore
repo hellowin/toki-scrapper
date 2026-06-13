@@ -1,0 +1,44 @@
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test and coverage artifacts
+.coverage
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Python tooling
+.python-version
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local database artifacts
+*.db
+*.sqlite
+*.sqlite3
+
+# Project-generated data
+toki_stats.db
