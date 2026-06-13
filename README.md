@@ -102,6 +102,7 @@ python main.py list
 
 Options:
 - `--limit INT` : number of rows to show, default `100`
+- `--filter TEXT` : case-insensitive substring match on school name
 
 Examples:
 
@@ -111,6 +112,42 @@ python main.py list --limit 20
 
 # Top 200 schools
 python main.py list --limit 200
+
+# Filter by school name substring (case-insensitive)
+python main.py list --filter malang
+python main.py list --filter Malang --limit 50
+```
+
+#### trend
+
+Shows school medal achievement trend year-to-year, split into separate tables per medal category.
+
+Input is TOKI school source ID.
+
+```bash
+python main.py trend 1
+```
+
+The command prints 4 sections:
+- Gold (Emas)
+- Silver (Perak)
+- Bronze (Perunggu)
+- Other (No Medal / Juara Harapan / Empty)
+
+Each section includes year-by-year counts for:
+- Internasional
+- Regional
+- Nasional
+- Total
+
+Examples:
+
+```bash
+# Trend for school ID 1
+python main.py trend 1
+
+# Trend using custom DB
+python main.py --db data/osn.sqlite trend 185
 ```
 
 ### Global option
@@ -218,7 +255,11 @@ python main.py list
 # Show top 20
 python main.py list --limit 20
 
+# Trend by school ID
+python main.py trend 1
+
 # Use custom DB
 python main.py --db data/osn.sqlite scrap
 python main.py --db data/osn.sqlite list --limit 50
+python main.py --db data/osn.sqlite trend 185
 ```

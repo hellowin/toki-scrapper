@@ -331,8 +331,16 @@ def command_list(args: argparse.Namespace) -> int:
     connection = connect_db(db_path)
     init_db(connection)
 
+    name_filter = clean_text(args.filter)
+    where_clause = ""
+    params: list[object] = []
+    if name_filter:
+        where_clause = "WHERE LOWER(s.name) LIKE ?"
+        params.append(f"%{name_filter.lower()}%")
+
     query = """
     SELECT
+        s.source_school_id,
         s.name,
         SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS i_gold,
         SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS i_silver,
@@ -350,6 +358,7 @@ def command_list(args: argparse.Namespace) -> int:
         SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS n_other
     FROM schools s
     LEFT JOIN records r ON r.school_id = s.id
+    """ + where_clause + """
     GROUP BY s.id, s.name
     ORDER BY
         i_gold DESC, i_silver DESC, i_bronze DESC, i_other DESC,
@@ -359,19 +368,24 @@ def command_list(args: argparse.Namespace) -> int:
     LIMIT ?
     """
 
-    rows = connection.execute(query, (args.limit,)).fetchall()
+    params.append(args.limit)
+    rows = connection.execute(query, tuple(params)).fetchall()
     if not rows:
-        print("No data. Run 'scrap' first.")
+        if name_filter:
+            print(f"No data found for filter: {name_filter}")
+        else:
+            print("No data. Run 'scrap' first.")
         return 0
 
     table_rows = []
     for idx, row in enumerate(rows, start=1):
-        values = [idx, row[0], *row[1:]]
+        values = [idx, row[0], row[1], *row[2:]]
         display_values = ["-" if value == 0 else value for value in values]
         table_rows.append(display_values)
 
     headers = [
         "#",
+        "School ID",
         "Sekolah",
         "I-G",
         "I-S",
@@ -388,6 +402,83 @@ def command_list(args: argparse.Namespace) -> int:
     ]
 
     print(tabulate(table_rows, headers=headers, tablefmt="github"))
+    return 0
+
+
+def command_trend(args: argparse.Namespace) -> int:
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"Database not found: {db_path}. Run 'scrap' first.", file=sys.stderr)
+        return 1
+
+    connection = connect_db(db_path)
+    init_db(connection)
+
+    school_row = connection.execute(
+        "SELECT id, name FROM schools WHERE source_school_id = ?",
+        (args.school_id,),
+    ).fetchone()
+    if school_row is None:
+        print(f"School with source ID {args.school_id} was not found in database.", file=sys.stderr)
+        print("Run 'scrap' first, or check the school ID.", file=sys.stderr)
+        return 1
+
+    school_db_id = int(school_row[0])
+    school_name = str(school_row[1])
+
+    categories = [
+        ("gold", "Gold (Emas)"),
+        ("silver", "Silver (Perak)"),
+        ("bronze", "Bronze (Perunggu)"),
+        ("other", "Other (No Medal / Juara Harapan / Empty)"),
+    ]
+
+    print(f"Trend for school ID {args.school_id}: {school_name}")
+
+    query = """
+    SELECT
+        r.year,
+        SUM(CASE WHEN r.level = 'internasional' THEN 1 ELSE 0 END) AS internasional,
+        SUM(CASE WHEN r.level = 'regional' THEN 1 ELSE 0 END) AS regional,
+        SUM(CASE WHEN r.level = 'nasional' THEN 1 ELSE 0 END) AS nasional
+    FROM records r
+    WHERE r.school_id = ?
+      AND r.medal_category = ?
+      AND r.year IS NOT NULL
+    GROUP BY r.year
+    ORDER BY r.year ASC
+    """
+
+    for medal_key, medal_title in categories:
+        rows = connection.execute(query, (school_db_id, medal_key)).fetchall()
+        print()
+        print(medal_title)
+
+        if not rows:
+            print("No records")
+            continue
+
+        table_rows = []
+        for year, internasional, regional, nasional in rows:
+            total = (internasional or 0) + (regional or 0) + (nasional or 0)
+            table_rows.append(
+                [
+                    year,
+                    "-" if internasional == 0 else internasional,
+                    "-" if regional == 0 else regional,
+                    "-" if nasional == 0 else nasional,
+                    "-" if total == 0 else total,
+                ]
+            )
+
+        print(
+            tabulate(
+                table_rows,
+                headers=["Year", "Internasional", "Regional", "Nasional", "Total"],
+                tablefmt="github",
+            )
+        )
+
     return 0
 
 
@@ -408,7 +499,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_parser = subparsers.add_parser("list", help="List school ranking table")
     list_parser.add_argument("--limit", type=int, default=100, help="Rows to display")
+    list_parser.add_argument("--filter", default="", help="Case-insensitive school name substring filter")
     list_parser.set_defaults(func=command_list)
+
+    trend_parser = subparsers.add_parser("trend", help="Show year-by-year medal trend for a school ID")
+    trend_parser.add_argument("school_id", type=int, help="School source ID from TOKI URL")
+    trend_parser.set_defaults(func=command_trend)
 
     return parser
 
