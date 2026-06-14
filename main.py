@@ -25,6 +25,25 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
+RANKING_HEADERS = [
+    "#",
+    "# National",
+    "School ID",
+    "Sekolah",
+    "I-G",
+    "I-S",
+    "I-B",
+    "I-O",
+    "R-G",
+    "R-S",
+    "R-B",
+    "R-O",
+    "N-G",
+    "N-S",
+    "N-B",
+    "N-O",
+]
+
 
 @dataclass
 class SchoolRecord:
@@ -270,6 +289,106 @@ def insert_records(connection: sqlite3.Connection, school_db_id: int, records: I
     )
 
 
+def build_national_ranks(connection: sqlite3.Connection) -> dict[int, int]:
+    query = """
+    SELECT
+        s.source_school_id,
+        s.name,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS i_gold,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS i_silver,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS i_bronze,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS i_other,
+
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS r_gold,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS r_silver,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS r_bronze,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS r_other,
+
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS n_gold,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS n_silver,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS n_bronze,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS n_other
+    FROM schools s
+    LEFT JOIN records r ON r.school_id = s.id
+    GROUP BY s.id, s.name
+    ORDER BY
+        i_gold DESC, i_silver DESC, i_bronze DESC, i_other DESC,
+        r_gold DESC, r_silver DESC, r_bronze DESC, r_other DESC,
+        n_gold DESC, n_silver DESC, n_bronze DESC, n_other DESC,
+        s.name ASC
+    """
+
+    rows = connection.execute(query).fetchall()
+    national_ranks: dict[int, int] = {}
+    for idx, row in enumerate(rows, start=1):
+        national_ranks[int(row[0])] = idx
+    return national_ranks
+
+
+def build_year_national_ranks(connection: sqlite3.Connection) -> dict[int, dict[int, int]]:
+    query = """
+    SELECT
+        r.year,
+        s.source_school_id,
+        s.name,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS i_gold,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS i_silver,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS i_bronze,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS i_other,
+
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS r_gold,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS r_silver,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS r_bronze,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS r_other,
+
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS n_gold,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS n_silver,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS n_bronze,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS n_other
+    FROM schools s
+    JOIN records r ON r.school_id = s.id
+    WHERE r.year IS NOT NULL
+    GROUP BY r.year, s.id, s.name
+    ORDER BY
+        r.year DESC,
+        i_gold DESC, i_silver DESC, i_bronze DESC, i_other DESC,
+        r_gold DESC, r_silver DESC, r_bronze DESC, r_other DESC,
+        n_gold DESC, n_silver DESC, n_bronze DESC, n_other DESC,
+        s.name ASC
+    """
+
+    rows = connection.execute(query).fetchall()
+    year_ranks: dict[int, dict[int, int]] = {}
+    current_year: int | None = None
+    current_rank = 0
+
+    for row in rows:
+        year = int(row[0])
+        school_id = int(row[1])
+        if year != current_year:
+            current_year = year
+            current_rank = 0
+            year_ranks[year] = {}
+        current_rank += 1
+        year_ranks[year][school_id] = current_rank
+
+    return year_ranks
+
+
+def build_ranking_rows(
+    rows: list[sqlite3.Row | tuple[object, ...]],
+    national_ranks: dict[int, int] | None = None,
+) -> list[list[object]]:
+    table_rows: list[list[object]] = []
+    for idx, row in enumerate(rows, start=1):
+        school_id = int(row[0])
+        national_rank = national_ranks.get(school_id, "-") if national_ranks is not None else "-"
+        values = [idx, national_rank, school_id, row[1], *row[2:]]
+        display_values = ["-" if value == 0 else value for value in values]
+        table_rows.append(display_values)
+    return table_rows
+
+
 def command_scrap(args: argparse.Namespace) -> int:
     db_path = Path(args.db)
     scraper = TokiScraper(delay_seconds=args.delay, timeout_seconds=args.timeout)
@@ -330,6 +449,7 @@ def command_list(args: argparse.Namespace) -> int:
 
     connection = connect_db(db_path)
     init_db(connection)
+    national_ranks = build_national_ranks(connection)
 
     name_filter = clean_text(args.filter)
     where_clause = ""
@@ -377,31 +497,90 @@ def command_list(args: argparse.Namespace) -> int:
             print("No data. Run 'scrap' first.")
         return 0
 
-    table_rows = []
-    for idx, row in enumerate(rows, start=1):
-        values = [idx, row[0], row[1], *row[2:]]
-        display_values = ["-" if value == 0 else value for value in values]
-        table_rows.append(display_values)
+    table_rows = build_ranking_rows(rows, national_ranks=national_ranks)
+    print(tabulate(table_rows, headers=RANKING_HEADERS, tablefmt="github"))
+    return 0
 
-    headers = [
-        "#",
-        "School ID",
-        "Sekolah",
-        "I-G",
-        "I-S",
-        "I-B",
-        "I-O",
-        "R-G",
-        "R-S",
-        "R-B",
-        "R-O",
-        "N-G",
-        "N-S",
-        "N-B",
-        "N-O",
-    ]
 
-    print(tabulate(table_rows, headers=headers, tablefmt="github"))
+def command_list_year(args: argparse.Namespace) -> int:
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"Database not found: {db_path}. Run 'scrap' first.", file=sys.stderr)
+        return 1
+
+    connection = connect_db(db_path)
+    init_db(connection)
+    year_national_ranks = build_year_national_ranks(connection)
+
+    name_filter = clean_text(args.filter)
+    if args.limit_year is not None and args.limit_year < 1:
+        print("--limit-year must be >= 1", file=sys.stderr)
+        return 1
+
+    where_conditions = ["r.year IS NOT NULL"]
+    params: list[object] = []
+    if name_filter:
+        where_conditions.append("LOWER(s.name) LIKE ?")
+        params.append(f"%{name_filter.lower()}%")
+
+    where_clause = "WHERE " + " AND ".join(where_conditions)
+
+    query = """
+    SELECT
+        r.year,
+        s.source_school_id,
+        s.name,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS i_gold,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS i_silver,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS i_bronze,
+        SUM(CASE WHEN r.level = 'internasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS i_other,
+
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS r_gold,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS r_silver,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS r_bronze,
+        SUM(CASE WHEN r.level = 'regional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS r_other,
+
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'gold' THEN 1 ELSE 0 END) AS n_gold,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'silver' THEN 1 ELSE 0 END) AS n_silver,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'bronze' THEN 1 ELSE 0 END) AS n_bronze,
+        SUM(CASE WHEN r.level = 'nasional' AND r.medal_category = 'other' THEN 1 ELSE 0 END) AS n_other
+    FROM schools s
+    JOIN records r ON r.school_id = s.id
+    """ + where_clause + """
+    GROUP BY r.year, s.id, s.name
+    ORDER BY
+        r.year DESC,
+        i_gold DESC, i_silver DESC, i_bronze DESC, i_other DESC,
+        r_gold DESC, r_silver DESC, r_bronze DESC, r_other DESC,
+        n_gold DESC, n_silver DESC, n_bronze DESC, n_other DESC,
+        s.name ASC
+    """
+
+    rows = connection.execute(query, tuple(params)).fetchall()
+    if not rows:
+        if name_filter:
+            print(f"No data found for filter: {name_filter}")
+        else:
+            print("No yearly data. Run 'scrap' first.")
+        return 0
+
+    grouped_rows: dict[int, list[tuple[object, ...]]] = {}
+    for row in rows:
+        year = int(row[0])
+        grouped_rows.setdefault(year, []).append(row[1:])
+
+    years = sorted(grouped_rows.keys(), reverse=True)
+    if args.limit_year is not None:
+        years = years[: args.limit_year]
+
+    for idx, year in enumerate(years, start=1):
+        if idx > 1:
+            print()
+        print(f"Year {year}")
+        limited_rows = grouped_rows[year][: args.limit]
+        table_rows = build_ranking_rows(limited_rows, national_ranks=year_national_ranks.get(year, {}))
+        print(tabulate(table_rows, headers=RANKING_HEADERS, tablefmt="github"))
+
     return 0
 
 
@@ -501,6 +680,12 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--limit", type=int, default=100, help="Rows to display")
     list_parser.add_argument("--filter", default="", help="Case-insensitive school name substring filter")
     list_parser.set_defaults(func=command_list)
+
+    list_year_parser = subparsers.add_parser("list-year", help="List school ranking table grouped by year")
+    list_year_parser.add_argument("--limit", type=int, default=100, help="Rows to display per year")
+    list_year_parser.add_argument("--limit-year", type=int, default=None, help="Most recent years to display")
+    list_year_parser.add_argument("--filter", default="", help="Case-insensitive school name substring filter")
+    list_year_parser.set_defaults(func=command_list_year)
 
     trend_parser = subparsers.add_parser("trend", help="Show year-by-year medal trend for a school ID")
     trend_parser.add_argument("school_id", type=int, help="School source ID from TOKI URL")

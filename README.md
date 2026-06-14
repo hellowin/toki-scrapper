@@ -118,6 +118,36 @@ python main.py list --filter malang
 python main.py list --filter Malang --limit 50
 ```
 
+#### list-year
+
+Shows ranked school tables grouped by year. Each year section uses the same medal columns and sorting logic as `list`.
+
+```bash
+python main.py list-year
+```
+
+Options:
+- `--limit INT` : number of rows to show per year section, default `100`
+- `--limit-year INT` : show only the most recent N years
+- `--filter TEXT` : case-insensitive substring match on school name
+
+Examples:
+
+```bash
+# Top 20 schools per year
+python main.py list-year --limit 20
+
+# Show only the latest 5 years
+python main.py list-year --limit-year 5
+
+# Show top 10 schools for each of the latest 3 years
+python main.py list-year --limit 10 --limit-year 3
+
+# Filter yearly ranking by school name substring
+python main.py list-year --filter malang
+python main.py list-year --filter Malang --limit 50
+```
+
 #### trend
 
 Shows school medal achievement trend year-to-year, split into separate tables per medal category.
@@ -160,10 +190,12 @@ Examples:
 # Use default DB
 python main.py scrap
 python main.py list
+python main.py list-year
 
 # Use custom DB
 python main.py --db data/osn.sqlite scrap
 python main.py --db data/osn.sqlite list --limit 50
+python main.py --db data/osn.sqlite list-year --limit 50
 ```
 
 ## Typical Workflow
@@ -187,6 +219,9 @@ python main.py list --limit 100
 
 The ranking output mirrors medal groups used on TOKI school statistics:
 
+- `#` = row rank in current output scope (current list, filter, or year section)
+- `# National` (for `list`) = overall national rank from unfiltered all-time `list` ordering
+- `# National` (for `list-year`) = national rank within that specific year (unfiltered for that year)
 - `I-*` = Internasional
 - `R-*` = Regional
 - `N-*` = Nasional
@@ -254,6 +289,9 @@ python main.py list
 
 # Show top 20
 python main.py list --limit 20
+
+# Show top 20 per year
+python main.py list-year --limit 20
 
 # Trend by school ID
 python main.py trend 1
