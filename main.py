@@ -320,8 +320,21 @@ def build_national_ranks(connection: sqlite3.Connection) -> dict[int, int]:
 
     rows = connection.execute(query).fetchall()
     national_ranks: dict[int, int] = {}
-    for idx, row in enumerate(rows, start=1):
-        national_ranks[int(row[0])] = idx
+    unique_rank = 0
+    previous_medals: tuple[int, ...] | None = None
+    
+    for row in rows:
+        school_id = int(row[0])
+        # Extract medal counts for comparison (columns 2-13)
+        current_medals = tuple(int(row[i]) for i in range(2, 14))
+        
+        # Increment rank only if medal counts differ (dense ranking)
+        if previous_medals is None or current_medals != previous_medals:
+            unique_rank += 1
+            previous_medals = current_medals
+        
+        national_ranks[school_id] = unique_rank
+    
     return national_ranks
 
 
@@ -360,17 +373,29 @@ def build_year_national_ranks(connection: sqlite3.Connection) -> dict[int, dict[
     rows = connection.execute(query).fetchall()
     year_ranks: dict[int, dict[int, int]] = {}
     current_year: int | None = None
-    current_rank = 0
+    unique_rank = 0
+    previous_medals: tuple[int, ...] | None = None
 
     for row in rows:
         year = int(row[0])
         school_id = int(row[1])
+        
+        # Reset tracking when year changes
         if year != current_year:
             current_year = year
-            current_rank = 0
+            unique_rank = 0
+            previous_medals = None
             year_ranks[year] = {}
-        current_rank += 1
-        year_ranks[year][school_id] = current_rank
+        
+        # Extract medal counts for comparison (columns 3-14)
+        current_medals = tuple(int(row[i]) for i in range(3, 15))
+        
+        # Increment rank only if medal counts differ (dense ranking)
+        if previous_medals is None or current_medals != previous_medals:
+            unique_rank += 1
+            previous_medals = current_medals
+        
+        year_ranks[year][school_id] = unique_rank
 
     return year_ranks
 
